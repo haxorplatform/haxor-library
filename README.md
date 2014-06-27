@@ -4,7 +4,7 @@ This repository aims to offer some initial tools that will allow testing feature
 
 # Tips
 
-* Asset - Use this class in the 'Load' method of the 'Application' class.  
+* Asset - Use this class in the `Load` method of the `Application` class.  
         It will load the asset and store its reference inside an  
         internal `Map<string,Resource>`  
   
