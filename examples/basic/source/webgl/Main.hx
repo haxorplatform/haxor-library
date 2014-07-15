@@ -13,7 +13,7 @@ import webgl.Particles;
 import webgl.ParticlesSheet;
 import webgl.Cubemap;
 import webgl.Spheremap;
-import Game;
+
 
 /**
  * Entry point where the examples are linked.

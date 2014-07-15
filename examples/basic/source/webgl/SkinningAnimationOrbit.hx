@@ -12,6 +12,7 @@ import haxor.core.Asset;
 import haxor.core.Console;
 import haxor.core.Engine;
 import haxor.core.Entity;
+import haxor.core.IRenderable;
 import haxor.core.IUpdateable;
 import haxor.core.Time;
 import haxor.editor.Gizmo;
@@ -40,7 +41,7 @@ import js.html.ProgressElement;
  * Loads a ColladaFile with the model and other Colladas with the animations.
  * @author Eduardo Pons - eduardo@thelaborat.org
  */
-class SkinningAnimationOrbit extends Application implements IUpdateable
+class SkinningAnimationOrbit extends Application implements IUpdateable implements IRenderable
 {
 	
 	var character : Entity;
@@ -53,7 +54,15 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 	
 	var orbit : CameraOrbit;
 	
+	var characters : Array<SkinnedMeshRenderer>;
 	
+	var render_clock : Float;
+	
+	var render_fps : Float;
+	
+	var render_count : Float;
+	
+	var visible_count : Float;
 	
 	/**
 	 * Loads the basic 'Flat' shader.
@@ -75,8 +84,8 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 		
 		//Loads the clips of animation.
 		//Each clip is a sequence of position,scale,rotation that moves the character joints
-		Asset.LoadCollada("character_idle01", "http://haxor.thelaborat.org/resources/character/skeleton/grunt/animation_idle01.DAE");
-		Asset.LoadCollada("character_idle02", "http://haxor.thelaborat.org/resources/character/skeleton/grunt/animation_idle02.DAE");
+		//Asset.LoadCollada("character_idle01", "http://haxor.thelaborat.org/resources/character/skeleton/grunt/animation_idle01.DAE");
+		//Asset.LoadCollada("character_idle02", "http://haxor.thelaborat.org/resources/character/skeleton/grunt/animation_idle02.DAE");
 		Asset.LoadCollada("character_run",    "http://haxor.thelaborat.org/resources/character/skeleton/grunt/animation_run.DAE");
 		
 	}
@@ -86,73 +95,30 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 	 */
 	override function Initialize():Void 
 	{
-		trace("SkinningAnimation> Initialize");
+		trace("SkinningAnimationOrbit> Initialize");
 				
+		characters = [];
 		
 		field  = cast Browser.document.getElementById("field");		
-		field.innerText += "Press 1 to start 'idle01' animation\n";
-		field.innerText += "Press 2 to start 'idle02' animation\n";
-		field.innerText += "Press 3 to start 'run' animation";
+	
+		render_clock = 0.0;
+		render_fps = 0.0;
 		
-		
+		visible_count = 1.0;
 		
 		angle = 0.0;
 		
-		//Loading of collada files results in a 'ColladaFile' instance
-		//This class stores information without creating the 'Entity' instance.
-		var cf : ColladaFile = Asset.Get("character");
-		
-		//'GetAsset()' will effectively create the instance.
-		character = new Entity();
-		
-		character = cf.GetAsset();
-		character.name = "asset";
-		
-		//Scales the character down
-		character.transform.scale = new Vector3(0.01, 0.01, 0.01);
-		
-		
-		
-		var collada_animation : ColladaFile;
-		
-		collada_animation = Asset.Get("character_idle01");
-		
-		//Creates the Animation component (if it does not exists) and adds the animation clip in it.
-		collada_animation.AddAnimations(character);
-		
-		collada_animation = Asset.Get("character_idle02");
-		collada_animation.AddAnimations(character);
-		
+		var collada_animation : ColladaFile;				
 		collada_animation = Asset.Get("character_run");
-		collada_animation.AddAnimations(character);
-		
-		//Equivalent to '.GetComponent(Animation)'
-		character_animation = character.animation;
-		
-		for (i in 0...character_animation.clips.length)
-		{
-			var c : AnimationClip = character_animation.clips[i];
-			trace("SkinningAnimation> Clip[" + i + "] = " + c.name);
-			
-			//Tells that the clip will keep repeating the animation
-			c.wrap = AnimationWrap.Loop;
-			c.name = "clip" + i;
-		}
-		
-		//Searches in the hierarchy for the occurrences of the 'MeshRenderer' component.
-		var mrl : Array<Component> = character.GetComponentsInChildren(SkinnedMeshRenderer);
-		
-		//The renderer needed for skinning is this one.
-		var mr : SkinnedMeshRenderer;
-		
-		//First MeshRenderer = body (opaque material)
-		mr = cast mrl[0];
-		
-		//Creates a material that handles rendering information like shader, depth test, render queue.
-		var mat : Material;
 		
 		var character_shader : Shader = Asset.Get("haxor/unlit/FlatTextureSkin");
 		
+		var mat_diffuse : Material;
+		var mat_transparent : Material;
+		
+		//Creates a material that handles rendering information like shader, depth test, render queue.
+		var mat : Material;
+				
 		mat = new Material();
 		mat.name 	= "AssetMaterialOpaque";
 		mat.shader  = character_shader; 									//Gets the shader loaded in the 'Load' method		
@@ -161,10 +127,8 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 		
 						
 		//Sets the material
-		mr.material = mat;
+		mat_diffuse = mat;
 		
-		//Second renderer = eyes (transparent)
-		mr = cast mrl[1];
 		
 		mat = new Material();
 		mat.name 	= "AssetMaterialTransparent";
@@ -173,12 +137,77 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 		mat.SetBlending(BlendMode.SrcAlpha, BlendMode.OneMinusSrcAlpha);    //Alpha Blend flags
 		mat.SetUniform("Tint", Color.white);
 		mat.queue   = RenderQueue.Transparent;								//Sets the render order to one of the last queues to allow the transparent stuff blend with the background
-		
-		
-		
+			
+			
+			
 		//Sets the material
-		mr.material = mat;
+		mat_transparent = mat;
 		
+		
+		for (i in 0...80)
+		{
+		
+			//Loading of collada files results in a 'ColladaFile' instance
+			//This class stores information without creating the 'Entity' instance.
+			var cf : ColladaFile = Asset.Get("character");
+			
+			//'GetAsset()' will effectively create the instance.
+			character = new Entity();
+			
+			character = cf.GetAsset();
+			character.name = "asset";
+			
+			
+			//Scales the character down
+			character.transform.scale = new Vector3(0.002, 0.002, 0.002);
+			
+			var px : Float = ((i % 10) * 0.2)-1.0;
+			var pz : Float = (Mathf.Floor(i / 10) * 0.2)-1.0;
+			
+			character.transform.position = new Vector3(px,0,pz);
+			
+			collada_animation.AddAnimations(character);
+			
+			//Equivalent to '.GetComponent(Animation)'
+			character_animation = character.animation;
+			
+			for (i in 0...character_animation.clips.length)
+			{
+				var c : AnimationClip = character_animation.clips[i];
+				trace("SkinningAnimation> Clip[" + i + "] = " + c.name);			
+				//Tells that the clip will keep repeating the animation
+				c.wrap = AnimationWrap.Loop;
+				c.name = "clip" + i;	
+				c.speed = Mathf.Lerp(0.9, 1.1, Math.random());
+				character_animation.Play(c);
+			}
+			
+			
+			
+			//Searches in the hierarchy for the occurrences of the 'MeshRenderer' component.
+			var mrl : Array<Component> = character.GetComponentsInChildren(SkinnedMeshRenderer);
+			
+			//The renderer needed for skinning is this one.
+			var mr : SkinnedMeshRenderer;
+			
+			//First MeshRenderer = body (opaque material)
+			mr = cast mrl[0];
+			
+			characters.push(mr);
+			
+							
+			//Sets the material
+			mr.material = mat_diffuse;
+			
+			//Second renderer = eyes (transparent)
+			mr = cast mrl[1];
+			
+			mr.enabled = false;
+			
+			//Sets the material
+			mr.material = mat_transparent;
+		
+		}
 		
 		//Creates an entity and adds a camera in it
 		//It is necessary to have at least one camera in the scene
@@ -195,7 +224,7 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 		cam.background = new Color(0, 0, 0);
 			
 		cam.near = 0.01;
-		cam.far = 5.0;
+		cam.far = 50.0;
 		
 		
 		//Default FPS = 45
@@ -205,37 +234,57 @@ class SkinningAnimationOrbit extends Application implements IUpdateable
 		Engine.Add(this);		
 	}
 	
+	public function OnRender():Void
+	{
+		render_count++;
+	}
+	
+	
 	/**
 	 * Execution loop.
 	 */
 	public function OnUpdate():Void
-	{		
+	{	
+		visible_count = Mathf.Clamp(visible_count, 0, characters.length);
+		
+		var vc : Int = cast Mathf.Floor(visible_count);		
+		
+		for (i in 0...characters.length)
+		{
+			characters[i].enabled = i<vc;
+		}
+		
+		render_clock += Time.deltaTime;
+		
+		if (render_clock >= 1.0)
+		{
+			render_clock -= 1.0;
+			render_fps = render_count;
+			render_count = 0;			
+		}
+		var log : String = "";
+		
+		log += "Press A to Add a Character\n";		
+		log += "Press Z to Remove a Character\n";
+		log += Mathf.Floor(render_fps) + "fps\n";
+		log += "Characters: " + vc;
+		
+		field.innerText = log;
+		
 		//angle += Time.deltaTime * 40.0;		
 		//character.transform.rotation = Quaternion.FromAxisAngle(Vector3.up, angle).Multiply(Quaternion.FromAxisAngle(Vector3.right, -90));		
 		
-		if (Input.Hit(KeyCode.D1))
+		if (Input.IsDown(KeyCode.A))
 		{
-			//Stop all animations so things do not play at the same time
-			character_animation.Stop();
-			trace("Playing Clip 0");
-			character_animation.Play(character_animation.clips[0]);
+			visible_count += Time.deltaTime * 8.0;
 		}
 		
-		if (Input.Hit(KeyCode.D2))
+		if (Input.IsDown(KeyCode.Z))
 		{
-			//Stop all animations so things do not play at the same time
-			character_animation.Stop();
-			trace("Playing Clip 1");
-			character_animation.Play(character_animation.clips[1]);
+			visible_count -= Time.deltaTime * 8.0;
 		}
 		
-		if (Input.Hit(KeyCode.D3))
-		{
-			//Stop all animations so things do not play at the same time
-			character_animation.Stop();
-			trace("Playing Clip 2");
-			character_animation.Play(character_animation.clips[2]);
-		}
+		
 		
 		if (Input.Hit(KeyCode.D4))
 		{
